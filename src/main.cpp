@@ -32,6 +32,7 @@
 #include <cstring>
 #include <cstdint>
 #include <vector>
+#include <unordered_map>
 
 // Check the current string against a given list of potential keywords. Returns
 // the index or -1.
@@ -208,39 +209,56 @@ struct DState
 	bool bright;
 };
 
+// Meta information for a declared property
+struct Property
+{
+	enum Type { TYPE_Int, TYPE_Fixed, TYPE_Sound, TYPE_Flags, TYPE_State };
+
+	Type type;
+	std::string name;
+	std::string codename;
+};
+
+// Property list for actors.  Copyable, initializes to 0/empty string.
+struct PropList
+{
+	struct Value
+	{
+		Value() : number(0) {}
+
+		std::string string;
+		int number;
+	};
+
+	Value &operator[](const std::string &index)
+	{
+		return props[index];
+	}
+
+	// Until we can declartively do flags, this will work.
+	uint32_t flags;
+private:
+	std::unordered_map<std::string, Value> props;
+};
+
 // Our mobj information.
 struct Actor
 {
 	Actor() : classNum(0), parent(0), doomednum(-1), native(false) {}
 
 	std::string name;
+	std::string codename;
 	int classNum;
 	int parent;
 	int doomednum;
 	bool native;
 
-	// Should be able to be memset/memcpy'd
-	struct
-	{
-		int spawnhealth;
-		int seesound;
-		int reactiontime;
-		int attacksound;
-		int painchance;
-		int painsound;
-		int deathsound;
-		int speed;
-		int radius;
-		int height;
-		int mass;
-		int damage;
-		int activesound;
-		uint32_t flags;
-	} props;
+	PropList props;
 
 	// Local tables
 	std::vector<DState> states;
 	std::vector<Label> labels;
+	std::vector<Property> properties;
 };
 
 std::vector<std::string> SpriteNames;
@@ -355,7 +373,7 @@ const State *FindState(const Actor &actor, const StateLink &link)
 }
 
 // Lookup label by name.
-const State *FindState(const Actor &actor, const char* label)
+const State *FindState(const Actor &actor, const std::string &label)
 {
 	StateLink link;
 	link.jumpState = label;
@@ -652,64 +670,13 @@ void ParseActorStates(Scanner &sc, Actor &actor)
 // part of the info.c/info.h.
 void ParseActorProperty(Scanner &sc, Actor &actor)
 {
+	Actor *check = &actor;
 	enum {
-		PROP_Health, PROP_SeeSound, PROP_ReactionTime, PROP_AttackSound,
-		PROP_PainChance, PROP_PainSound, PROP_DeathSound, PROP_Speed,
-		PROP_Radius, PROP_Height, PROP_Mass, PROP_Damage, PROP_RenderStyle,
-		PROP_Translation
+		PROP_RenderStyle, PROP_Translation
 	};
 
-	switch(CheckKeyword(sc, {"health", "seesound", "reactiontime",
-		"attacksound", "painchance", "painsound", "deathsound", "speed",
-		"radius", "height", "mass", "damage", "renderstyle", "translation"}))
+	switch(CheckKeyword(sc, {"renderstyle", "translation"}))
 	{
-	case PROP_Health:
-		sc.MustGetToken(TK_IntConst);
-		actor.props.spawnhealth = sc->number;
-		break;
-	case PROP_ReactionTime:
-		sc.MustGetToken(TK_IntConst);
-		actor.props.reactiontime = sc->number;
-		break;
-	case PROP_PainChance:
-		sc.MustGetToken(TK_IntConst);
-		actor.props.painchance = sc->number;
-		break;
-	case PROP_Speed:
-		sc.MustGetToken(TK_IntConst);
-		actor.props.speed = sc->number;
-		break;
-	case PROP_Radius:
-		sc.MustGetToken(TK_FloatConst);
-		actor.props.radius = int(sc->decimal*0x10000);
-		break;
-	case PROP_Height:
-		sc.MustGetToken(TK_FloatConst);
-		actor.props.height = int(sc->decimal*0x10000);
-		break;
-	case PROP_Mass:
-		sc.MustGetToken(TK_IntConst);
-		actor.props.mass = sc->number;
-		break;
-	case PROP_Damage:
-		actor.props.damage = GetNegativeInteger(sc);
-		break;
-	case PROP_SeeSound:
-		sc.MustGetToken(TK_StringConst);
-		actor.props.seesound = LookupSound(sc->str);
-		break;
-	case PROP_AttackSound:
-		sc.MustGetToken(TK_StringConst);
-		actor.props.attacksound = LookupSound(sc->str);
-		break;
-	case PROP_PainSound:
-		sc.MustGetToken(TK_StringConst);
-		actor.props.painsound = LookupSound(sc->str);
-		break;
-	case PROP_DeathSound:
-		sc.MustGetToken(TK_StringConst);
-		actor.props.deathsound = LookupSound(sc->str);
-		break;
 	case PROP_RenderStyle:
 		sc.MustGetToken(TK_StringConst);
 		switch(CheckKeyword(sc, {"none", "fuzzy"}))
@@ -732,6 +699,39 @@ void ParseActorProperty(Scanner &sc, Actor &actor)
 		actor.props.flags = (actor.props.flags&(~(MF_TRANSLATION1|MF_TRANSLATION2)))|(sc->number*MF_TRANSLATION1);
 		break;
 	default:
+		do
+		{
+			auto propname = sc->str;
+			auto prop = std::find_if(check->properties.begin(), check->properties.end(),
+									 [propname](const Property &prop) { return stricmp(prop.name.c_str(), propname.c_str()) == 0; });
+			if(prop != check->properties.end())
+			{
+				switch(prop->type)
+				{
+				case Property::TYPE_Int:
+					actor.props[prop->name].number = GetNegativeInteger(sc);
+					break;
+				case Property::TYPE_Fixed:
+					sc.MustGetToken(TK_FloatConst);
+					actor.props[prop->name].number = sc->decimal*0x10000;
+					break;
+				case Property::TYPE_Sound:
+					sc.MustGetToken(TK_StringConst);
+					actor.props[prop->name].string = LookupSound(sc->str);
+					break;
+				case Property::TYPE_Flags:
+				case Property::TYPE_State:
+					sc.ScriptMessage(Scanner::ERROR, "Property is automatically assigned by other means.");
+					break;
+				}
+				return;
+			}
+
+			if(check->parent == -1)
+				check = &ActorClasses[check->parent];
+		}
+		while(true);
+
 		sc.ScriptMessage(Scanner::ERROR, "Unknown property '%s'.\n", sc->str.c_str());
 		break;
 	}
@@ -775,6 +775,52 @@ void ParseActionFunction(Scanner &sc, Actor &actor)
 	sc.MustGetToken(';');
 }
 
+// Actor annotation defines properties, which translates to the mobj struct.
+void ParseActorAnnotation(Scanner &sc, Actor &actor)
+{
+	while(!sc.CheckToken(TK_AnnotateEnd))
+	{
+		sc.MustGetToken(TK_Identifier);
+		RequireKeyword(sc, {"native"});
+
+		Property prop;
+		int type;
+
+		enum { KEYWORD_Property };
+		sc.MustGetToken(TK_Identifier);
+		switch(CheckKeyword(sc, {"property"}))
+		{
+		case KEYWORD_Property:
+			sc.MustGetToken(TK_Identifier);
+			
+			if((type = CheckKeyword(sc, {"int", "fixed", "sound", "flags", "state"})) >= 0)
+				prop.type = static_cast<Property::Type>(type);
+			else
+				sc.ScriptMessage(Scanner::ERROR, "Unknown type '%s'.", sc->str.c_str());
+
+			sc.MustGetToken(TK_Identifier);
+			prop.codename = prop.name = sc->str;
+			// Can't nest annotations and maintain compatibility with normal
+			// DECORATE parsers so use this syntax instead for code name.
+			if(sc.CheckToken('<'))
+			{
+				sc.MustGetToken(TK_Identifier);
+				prop.codename = sc->str;
+				sc.MustGetToken('>');
+			}
+			else if(type == Property::TYPE_State)
+				prop.codename += "state";
+			sc.MustGetToken(';');
+
+			actor.properties.push_back(prop);
+			break;
+		default:
+			sc.ScriptMessage(Scanner::ERROR, "Unknown data type '%s'.", sc->str.c_str());
+			break;
+		}
+	}
+}
+
 // Parse the actor's body (properties, flags, and states).
 void ParseActorBody(Scanner &sc, Actor &actor)
 {
@@ -785,6 +831,8 @@ void ParseActorBody(Scanner &sc, Actor &actor)
 			ParseActorFlag(sc, actor, true);
 		else if(sc.CheckToken('-'))
 			ParseActorFlag(sc, actor, false);
+		else if(sc.CheckToken(TK_AnnotateStart))
+			ParseActorAnnotation(sc, actor);
 		else
 		{
 			sc.MustGetToken(TK_Identifier);
@@ -827,15 +875,12 @@ void ParseActor(Scanner &sc)
 			sc.ScriptMessage(Scanner::ERROR, "Unknown parent actor '%s'.", parentName.c_str());
 
 		actor.parent = parent - ActorClasses.begin();
-		memcpy(&actor.props, &parent->props, sizeof(actor.props));
+		actor.props = parent->props;
 	}
 	else if(actor.classNum != 0) // Inherit from Actor
-		memcpy(&actor.props, &ActorClasses[0].props, sizeof(actor.props));
+		actor.props = ActorClasses[0].props;
 	else
-	{
 		actor.parent = -1;
-		memset(&actor.props, 0, sizeof(actor.props));
-	}
 
 	// Doom editor number
 	if(sc.CheckToken(TK_IntConst))
@@ -855,6 +900,18 @@ void ParseActor(Scanner &sc)
 		RequireKeyword(sc, {"native"});
 		actor.native = true;
 	}
+
+	// Assign a name for code MT_*
+	if(sc.CheckToken(TK_AnnotateStart))
+	{
+		sc.MustGetToken(TK_Identifier);
+		actor.codename = sc->str;
+		sc.MustGetToken(TK_AnnotateEnd);
+	}
+	else
+		actor.codename = actor.name;
+	ToUpper(actor.codename);
+	
 
 	ParseActorBody(sc, actor);
 }
@@ -900,16 +957,19 @@ void WriteInfoC(FILE *f)
 	unsigned int i;
 
 	i = 0;
-	fprintf(f, "char *sprnames[] = {\n\t");
+	fprintf(f, "#include \"info.h\"\n\nchar *sprnames[] = {\n\t");
 	for(auto &spr : SpriteNames)
 	{
 		fprintf(f, "\"%s\", ", spr.c_str());
 		if(((++i) % 10) == 0)
 			fprintf(f, "\n\t");
 	}
-	fprintf(f, "NULL\n};\n\n");
+	fprintf(f, "NULL\n};\n\n\n");
 
-	fprintf(f, "state_t states[NUMSTATES] = {\n");
+	for(auto &af : ActionFunctions)
+		fprintf(f, "void %s();\n", af.function.c_str());
+
+	fprintf(f, "\n\nstate_t states[NUMSTATES] = {\n");
 	for(auto &state : StateTable)
 	{
 		std::string funcname("NULL");
@@ -935,64 +995,83 @@ void WriteInfoC(FILE *f)
 		if(actor.native)
 			continue;
 
-		auto SpawnState = FindState(actor, "Spawn");
-		if(SpawnState == NULL) SpawnState = &StateTable[0];
-		auto SeeState = FindState(actor, "See");
-		if(SeeState == NULL) SeeState = &StateTable[0];
-		auto PainState = FindState(actor, "Pain");
-		if(PainState == NULL) PainState = &StateTable[0];
-		auto MeleeState = FindState(actor, "Melee");
-		if(MeleeState == NULL) MeleeState = &StateTable[0];
-		auto MissileState = FindState(actor, "Missile");
-		if(MissileState == NULL) MissileState = &StateTable[0];
-		auto DeathState = FindState(actor, "Death");
-		if(DeathState == NULL) DeathState = &StateTable[0];
-		auto XDeathState = FindState(actor, "XDeath");
-		if(XDeathState == NULL) XDeathState = &StateTable[0];
-		auto RaiseState = FindState(actor, "Raise");
-		if(RaiseState == NULL) RaiseState = &StateTable[0];
-
-		fprintf(f, "\n\t{\n");
-		fprintf(f, "\t\t%d,\n", actor.doomednum);
-		fprintf(f, "\t\tS_%s,\n", SpawnState->label.c_str());
-		fprintf(f, "\t\t%d,\n", actor.props.spawnhealth);
-		fprintf(f, "\t\tS_%s,\n", SeeState->label.c_str());
-		fprintf(f, "\t\tsfx_None,\n");
-		fprintf(f, "\t\t%d,\n", actor.props.reactiontime);
-		fprintf(f, "\t\tsfx_None,\n");
-		fprintf(f, "\t\tS_%s,\n", PainState->label.c_str());
-		fprintf(f, "\t\t%d,\n", actor.props.painchance);
-		fprintf(f, "\t\tsfx_None,\n");
-		fprintf(f, "\t\tS_%s,\n", MeleeState->label.c_str());
-		fprintf(f, "\t\tS_%s,\n", MissileState->label.c_str());
-		fprintf(f, "\t\tS_%s,\n", DeathState->label.c_str());
-		fprintf(f, "\t\tS_%s,\n", XDeathState->label.c_str());
-		fprintf(f, "\t\tsfx_None,\n");
-		fprintf(f, "\t\t%d,\n", actor.props.speed);
-		fprintf(f, "\t\t%X,\n", actor.props.radius);
-		fprintf(f, "\t\t%X,\n", actor.props.height);
-		fprintf(f, "\t\t%d,\n", actor.props.mass);
-		fprintf(f, "\t\t%d,\n", actor.props.damage);
-		fprintf(f, "\t\tsfx_None,\n");
-		fprintf(f, "\t\t");
-		bool hadFlag = false;
-		for(unsigned int i = 0;Flags[i].name;++i)
+		fprintf(f, "\n\t{\t// MT_%s\n\t\t%d,\t// doomednum\n", actor.codename.c_str(), actor.doomednum);
+		for(auto &property : ActorClasses[0].properties)
 		{
-			if(actor.props.flags & Flags[i].flag)
+			switch(property.type)
 			{
-				if(hadFlag)
-					fprintf(f, "|");
-				fprintf(f, "MF_%s", Flags[i].name);
-				hadFlag = true;
+			case Property::TYPE_Int:
+				fprintf(f, "\t\t%d,\t// %s\n", actor.props[property.name].number, property.codename.c_str());
+				break;
+			case Property::TYPE_Fixed:
+				fprintf(f, "\t\t%X,\t// %s\n", actor.props[property.name].number, property.codename.c_str());
+				break;
+			case Property::TYPE_Sound:
+				fprintf(f, "\t\tsfx_None,\t// %s\n", property.codename.c_str());
+				break;
+			case Property::TYPE_Flags:
+			{
+				fprintf(f, "\t\t");
+				bool hadFlag = false;
+				for(unsigned int i = 0;Flags[i].name;++i)
+				{
+					if(actor.props.flags & Flags[i].flag)
+					{
+						if(hadFlag)
+							fprintf(f, "|");
+						fprintf(f, "MF_%s", Flags[i].name);
+						hadFlag = true;
+					}
+				}
+				if(!hadFlag)
+					fprintf(f, "0");
+				fprintf(f, ",\t// %s\n", property.codename.c_str());
+				break;
+			}
+			case Property::TYPE_State:
+			{
+				auto state = FindState(actor, property.name.c_str());
+				if(state == NULL) state = &StateTable[0];
+				fprintf(f, "\t\tS_%s,\t// %s\n", state->label.c_str(), property.codename.c_str());
+				break;
+			}
 			}
 		}
-		if(!hadFlag)
-			fprintf(f, "0");
-		fprintf(f, ",\n");
-		fprintf(f, "\t\tS_%s,\n", RaiseState->label.c_str());
 		fprintf(f, "\t},\n");
 	}
 	fprintf(f, "};\n");
+}
+
+// Write the generated contents of info.h
+void WriteInfoH(FILE *f)
+{
+	unsigned int i;
+
+	i = 0;
+	fprintf(f, "#ifndef __INFO_H__\n#define __INFO_H__\n\n#include \"d_think.h\"\n\ntypedef enum\n{\n");
+	for(auto &spr : SpriteNames)
+		fprintf(f, "\tSPR_%s,\n", spr.c_str());
+	fprintf(f, "\tNUMSPRITES\n\n} spritenum_t;\n\ntypedef enum\n{\n");
+
+	for(auto &state : StateTable)
+		fprintf(f, "\tS_%s\n", state.label.c_str());
+	fprintf(f, "\tNUMSTATES\n} statenum_t;\n\n");
+
+	fprintf(f, "typedef struct\n{\n\tspritenum_t sprite;\n\tint frame;\n\tint tics;\n\tactionf_t action;\n\tstatenum_t nextstate;\n\tint misc1;\n\tint misc2;\n} state;\n\nextern state_t states[NUMSTATES];\nextern char *sprnames[];\n\n");
+
+	fprintf(f, "typedef enum {\n");
+	for(auto &actor : ActorClasses)
+	{
+		if(actor.native)
+			continue;
+
+		fprintf(f, "\tMT_%s,\n", actor.codename.c_str());
+	}
+	fprintf(f, "\tNUMMOBJTYPES\n\n} mobjtype_t;\n\ntypedef struct\n{\n");
+
+	for(auto &property : ActorClasses[0].properties)
+		fprintf(f, "\tint %s;\n", property.codename.c_str());
+	fprintf(f, "\n} mobjinfo_t;\n\nextern mobjinfo_t mobjinfo[NUMOBJTYPES];\n\n#endif\n");
 }
 
 int main(int argc, char* argv[])
@@ -1005,6 +1084,12 @@ int main(int argc, char* argv[])
 
 	ParseScript(argv[1]);
 
-	WriteInfoC(stdout);
+	FILE *infoh = fopen("info.h", "wb");
+	WriteInfoH(infoh);
+	fclose(infoh);
+
+	FILE *infoc = fopen("info.c", "wb");
+	WriteInfoC(infoc);
+	fclose(infoc);
 	return 0;
 }
