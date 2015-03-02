@@ -239,6 +239,8 @@ struct PropList
 		int number;
 	};
 
+	PropList() : flags(0) {}
+
 	Value &operator[](const std::string &index)
 	{
 		return props[index];
@@ -1003,6 +1005,7 @@ std::vector<char> ReadFile(const char* fname)
 	fseek(f, 0, SEEK_SET);
 	std::vector<char> out(len);
 	fread(out.data(), len, 1, f);
+	fclose(f);
 	return out;
 }
 
