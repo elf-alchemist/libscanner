@@ -143,9 +143,17 @@ struct
 	{NULL, 0}
 };
 
+// Table of {sfx_*, SNDINFO logical name}
+std::vector<std::pair<std::string, std::string>> SoundTable;
+
 // Lookup a sound by logical name and return the index into the sound table.
 int LookupSound(const std::string &sound)
 {
+	for(unsigned int i = 0;i < SoundTable.size();++i)
+	{
+		if(stricmp(SoundTable[i].second.c_str(), sound.c_str()) == 0)
+			return (int)(i+1);
+	}
 	return 0;
 }
 
@@ -164,11 +172,12 @@ struct Action
 // after installation to the global state table.
 struct Label
 {
-	Label() : state(0), tablepos(-1) {}
+	Label() : state(0), deleted(false), tablepos(-1) {}
 
 	std::string label;
 	std::string codelabel; // Used to generate a name for C
 	int state;
+	bool deleted;
 
 	int tablepos; // Position in StateTable
 };
@@ -362,6 +371,9 @@ const State *FindState(const Actor &actor, const StateLink &link)
 		}
 		else
 		{
+			if(state->deleted)
+				return nullptr;
+
 			if(state->tablepos + link.jumpOffset >= StateTable.size())
 				break;
 			return &StateTable[state->tablepos + link.jumpOffset];
@@ -549,6 +561,27 @@ void ParseActorStates(Scanner &sc, Actor &actor)
 		case KEYWORD_Stop:
 			if(lastState)
 				lastState->next.sequence = SEQ_Stop;
+			else if(labels.size())
+			{
+				for(auto label : labels)
+				{
+					auto existinglbl = std::find_if(actor.labels.begin(), actor.labels.end(),
+													[label](const Label &lbl) { return stricmp(lbl.label.c_str(), label.first.c_str()) == 0; });
+					if(existinglbl == actor.labels.end())
+					{
+						Label lbl;
+						lbl.label = label.first;
+						lbl.deleted = true;
+						actor.labels.push_back(lbl);
+					}
+					else
+					{
+						existinglbl->state = actor.states.size()-1;
+						existinglbl->deleted = true;
+					}
+				}
+				labels.clear();
+			}
 			else
 				sc.ScriptMessage(Scanner::ERROR, "Stop found with no previous state.\n");
 			break;
@@ -647,12 +680,14 @@ void ParseActorStates(Scanner &sc, Actor &actor)
 					lbl.label = label.first;
 					lbl.codelabel = label.second;
 					lbl.state = actor.states.size()-1;
+					lbl.deleted = false;
 					actor.labels.push_back(lbl);
 				}
 				else
 				{
 					existinglbl->state = actor.states.size()-1;
 					existinglbl->codelabel = label.second;
+					existinglbl->deleted = false;
 				}
 			}
 			labels.clear();
@@ -703,7 +738,7 @@ void ParseActorProperty(Scanner &sc, Actor &actor)
 		{
 			auto propname = sc->str;
 			auto prop = std::find_if(check->properties.begin(), check->properties.end(),
-									 [propname](const Property &prop) { return stricmp(prop.name.c_str(), propname.c_str()) == 0; });
+									 [propname](const Property &prop) -> bool { return stricmp(prop.name.c_str(), propname.c_str()) == 0; });
 			if(prop != check->properties.end())
 			{
 				switch(prop->type)
@@ -717,7 +752,9 @@ void ParseActorProperty(Scanner &sc, Actor &actor)
 					break;
 				case Property::TYPE_Sound:
 					sc.MustGetToken(TK_StringConst);
-					actor.props[prop->name].string = LookupSound(sc->str);
+					actor.props[prop->name].number = LookupSound(sc->str);
+					if(!sc->str.empty() && actor.props[prop->name].number == 0)
+						sc.ScriptMessage(Scanner::ERROR, "Sound '%s' is not defined.", sc->str.c_str());
 					break;
 				case Property::TYPE_Flags:
 				case Property::TYPE_State:
@@ -728,7 +765,9 @@ void ParseActorProperty(Scanner &sc, Actor &actor)
 			}
 
 			if(check->parent == -1)
-				check = &ActorClasses[check->parent];
+				break;
+
+			check = &ActorClasses[check->parent];
 		}
 		while(true);
 
@@ -904,8 +943,10 @@ void ParseActor(Scanner &sc)
 	// Assign a name for code MT_*
 	if(sc.CheckToken(TK_AnnotateStart))
 	{
-		sc.MustGetToken(TK_Identifier);
-		actor.codename = sc->str;
+		if(sc.CheckToken(TK_Identifier))
+			actor.codename = sc->str;
+		else
+			actor.codename = std::string();
 		sc.MustGetToken(TK_AnnotateEnd);
 	}
 	else
@@ -921,9 +962,33 @@ void ParseDecorate(Scanner &sc)
 {
 	while(sc.TokensLeft())
 	{
-		sc.MustGetToken(TK_Identifier);
-		RequireKeyword(sc, {"actor"});
-		ParseActor(sc);
+		if(sc.CheckToken(TK_AnnotateStart))
+		{
+			// Parse sound table
+			std::vector<std::string> tmp;
+			sc.MustGetToken(TK_Identifier);
+			RequireKeyword(sc, {"soundmap"});
+			sc.MustGetToken('{');
+			do
+			{
+				sc.MustGetToken(TK_StringConst);
+				auto logical = sc->str;
+				sc.MustGetToken('<');
+				sc.MustGetToken(TK_Identifier);
+				auto codename = sc->str;
+				sc.MustGetToken('>');
+				SoundTable.emplace_back(std::pair<std::string, std::string>(codename, logical));
+			}
+			while(sc.CheckToken(','));
+			sc.MustGetToken('}');
+			sc.MustGetToken(TK_AnnotateEnd);
+		}
+		else
+		{
+			sc.MustGetToken(TK_Identifier);
+			RequireKeyword(sc, {"actor"});
+			ParseActor(sc);
+		}
 	}
 }
 
@@ -992,7 +1057,7 @@ void WriteInfoC(FILE *f)
 	fprintf(f, "mobjinfo_t mobjinfo[NUMOBJTYPES] = {\n");
 	for(auto &actor : ActorClasses)
 	{
-		if(actor.native)
+		if(actor.native || actor.codename.empty())
 			continue;
 
 		fprintf(f, "\n\t{\t// MT_%s\n\t\t%d,\t// doomednum\n", actor.codename.c_str(), actor.doomednum);
@@ -1007,7 +1072,10 @@ void WriteInfoC(FILE *f)
 				fprintf(f, "\t\t%X,\t// %s\n", actor.props[property.name].number, property.codename.c_str());
 				break;
 			case Property::TYPE_Sound:
-				fprintf(f, "\t\tsfx_None,\t// %s\n", property.codename.c_str());
+				if(actor.props[property.name].number)
+					fprintf(f, "\t\tsfx_%s,\t// %s\n", SoundTable[actor.props[property.name].number].first.c_str(), property.codename.c_str());
+				else
+					fprintf(f, "\t\tsfx_None,\t// %s\n", property.codename.c_str());
 				break;
 			case Property::TYPE_Flags:
 			{
@@ -1062,7 +1130,7 @@ void WriteInfoH(FILE *f)
 	fprintf(f, "typedef enum {\n");
 	for(auto &actor : ActorClasses)
 	{
-		if(actor.native)
+		if(actor.native || actor.codename.empty())
 			continue;
 
 		fprintf(f, "\tMT_%s,\n", actor.codename.c_str());
