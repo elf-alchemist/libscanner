@@ -61,10 +61,10 @@ Keywords are case insensitive.
 
 ### 2.3 - Actor Definition
 >*actor-definition*:
->>*actor-header* { *actor-body<sub>opt</sub>* }
+>>*actor-header* { *actor-bodyₒₚₜ* }
 
 >*actor-header*:
->>actor *identifier* *inheritance-specifier<sub>opt</sub>* *replaces-specifier<sub>opt</sub>* *editor-number<sub>opt</sub>* native<sub>opt</sub>
+>>actor *identifier* *inheritance-specifierₒₚₜ* *replaces-specifierₒₚₜ* *editor-numberₒₚₜ* nativeₒₚₜ
 
 >*inheritance-specifier*:
 >>: *identifier*
@@ -148,14 +148,14 @@ The *flag-combos* set a defined set of flags. These act just as if the flags wer
 ### 2.3.3 - States
 
 >*states-decl*:
->>states { *state-seq<sub>opt</sub>* }
+>>states { *state-seqₒₚₜ* }
 
 >*states-seq*:
 >>*state*  
 >>*state* *states-seq*
 
 >*state*:
->>*state-labels<sub>opt</sub>* *sprite-name* *frame-sequence* *duration* *frame-properties<sub>opt</sub>* *codepointer<sub>opt</sub>* *state-flow-specifier<sub>opt</sub>*  
+>>*state-labelsₒₚₜ* *sprite-name* *frame-sequence* *duration* *frame-propertiesₒₚₜ* *codepointerₒₚₜ* *state-flow-specifierₒₚₜ*  
 >>*state-labels* stop
 
 >*state-labels*:
@@ -163,7 +163,7 @@ The *flag-combos* set a defined set of flags. These act just as if the flags wer
 >>*state-label* : *state-labels*
 
 >*state-label*:
->>*scope-resolution<sub>opt</sub>* *state-label-name*
+>>*scope-resolutionₒₚₜ* *state-label-name*
 
 >*scope-resolution*:
 >>*identifier* ::
