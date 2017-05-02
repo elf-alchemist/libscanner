@@ -46,10 +46,10 @@ This document will only define the subset of the language which would be common 
 
 The following base tokens are defined.
 
->identifier := [A-Za-z_]+[A-Za-z0-9_]*<br />
->integer := [+-]?[1-9]+[0-9]* | 0[0-9]+ | 0x[0-9A-Fa-f]+<br />
->float := [+-]?[0-9]+'.'[0-9]*([eE][+-]?[0-9]+)?<br />
->string := "([^"\\]*(\\.[^"\\]*)*)"
+>identifier := [A-Za-z_]+[A-Za-z0-9_]\*  
+>integer := [+-]?[1-9]+[0-9]\* | 0[0-9]+ | 0x[0-9A-Fa-f]+  
+>float := [+-]?[0-9]+'.'[0-9]\*([eE][+-]?[0-9]+)?  
+>string := "([^"\\]\*(\\.[^"\\]\*)\*)"
 
 ### 2.2 - Keywords
 
@@ -76,14 +76,14 @@ Keywords are case insensitive.
 >>*integer*
 
 >*actor-body*:
->>*actor-body-statement*<br />
+>>*actor-body-statement*  
 >>*actor-body* *actor-body-statement*
 
 >*actor-body-statement*:
->>*property-assignment*<br />
->>*flag-combo*<br />
->>*flag-assignment*<br />
->>*states-decl*<br />
+>>*property-assignment*  
+>>*flag-combo*  
+>>*flag-assignment*  
+>>*states-decl*  
 
 An *actor-definition* declares an new actor. The name of the actor is given in the *actor-header* and shall be unique. In the case of an name conflict, an implementation may rename the actor for compatibility, but it is not required.
 
@@ -102,16 +102,16 @@ An actor marked native indicates that there is special handling for the actor wi
 >>*property* *property-args*
 
 >*property*:
->>*identifier*<br />
+>>*identifier*  
 >>*identifier* . *identifier*
 
 >*property-args:*
->>*property-arg*<br />
+>>*property-arg*  
 >>*property-arg*, *property-args*
 
 >*property-arg*:
->>*string*<br />
->>*integer*<br />
+>>*string*  
+>>*integer*  
 >>*float*
 
 A *property-assignment* directly assigns a constant value to the actor structure. The type and number of arguments for a property depends on the property being assigned.
@@ -126,15 +126,15 @@ In the case of duplicated assignments, the last assignment is used. As an except
 
 ### 2.3.2 - Flags
 >*flag-assignment*:
->>\+ *flag*<br />
+>>\+ *flag*  
 >>\- *flag*
 
 >*flag*:
->>*identifier*<br />
+>>*identifier*  
 >>*identifier* . *identifier*
 
 >*flag-combo*:
->>MONSTER<br />
+>>MONSTER  
 >>PROJECTILE
 
 A *flag-assignment* sets or removes a flag from an actor. If the assignment begins with the + token then the specified flag is to be set. If the assignment begins with the - token then the flag is to be removed.
@@ -151,15 +151,15 @@ The *flag-combos* set a defined set of flags. These act just as if the flags wer
 >>states { *state-seq<sub>opt</sub>* }
 
 >*states-seq*:
->>*state*<br />
+>>*state*  
 >>*state* *states-seq*
 
 >*state*:
->>*state-labels<sub>opt</sub>* *sprite-name* *frame-sequence* *duration* *frame-properties<sub>opt</sub>* *codepointer<sub>opt</sub>* *state-flow-specifier<sub>opt</sub>*<br />
+>>*state-labels<sub>opt</sub>* *sprite-name* *frame-sequence* *duration* *frame-properties<sub>opt</sub>* *codepointer<sub>opt</sub>* *state-flow-specifier<sub>opt</sub>*  
 >>*state-labels* stop
 
 >*state-labels*:
->>*state-label* :<br />
+>>*state-label* :  
 >>*state-label* : *state-labels*
 
 >*state-label*:
@@ -169,34 +169,34 @@ The *flag-combos* set a defined set of flags. These act just as if the flags wer
 >>*identifier* ::
 
 >*state-label-name*:
->>*identifier*<br />
+>>*identifier*  
 >>*identifier* . *state-label-name*
 
 >*sprite-name*:
->>*identifier*<br />
+>>*identifier*  
 >>*string*
 
 >*frame-sequence*:
->>*identifier*<br />
+>>*identifier*  
 >>*string*
 
 >*duration*:
 >>*integer*
 
 >*frame-properties*:
->>bright<br />
->>fast<br />
+>>bright  
+>>fast  
 >>offset ( *integer* , *integer* )
 
 >*codepointer*:
->>*identifier*<br />
+>>*identifier*  
 >>*identifier* ( )
 
 >*state-flow-specifier*:
->>goto *state-label*<br />
->>loop<br />
->>stop<br />
->>wait<br />
+>>goto *state-label*  
+>>loop  
+>>stop  
+>>wait  
 
 The *states-decl* allows for the animation sequences to be defined for the actor. All states from the parent are accessible from the new actor.
 
