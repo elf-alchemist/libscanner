@@ -30,8 +30,8 @@
 #include <cstring>
 #include <cstdarg>
 
-#include "scanner_support.h"
-#include "scanner.h"
+#include "scanner/scanner_support.h"
+#include "scanner/scanner.h"
 
 void (*Scanner::messageHander)(MessageLevel, const char*, va_list) = NULL;
 
@@ -388,7 +388,7 @@ bool Scanner::GetNextToken(bool expandState)
 				{
 					scanPos++;
 					nextState.token = cur == '<' ? TK_ShiftLeftEq : TK_ShiftRightEq;
-					
+
 				}
 				else
 					nextState.token = cur == '<' ? TK_ShiftLeft : TK_ShiftRight;
